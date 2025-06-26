@@ -1,0 +1,16 @@
+gcc -o image_processor main.c image_handler.c show_bmp.c -lm
+arm-linux-gcc -o main main.c image_handler.c show_bmp.c -lm
+
+ arm-linux-gcc main.c -o main -I ~/libjpeg/include -L ~/libjpeg/lib -ljpeg
+
+ arm-linux-gcc main.c -o main -I ~/libjpeg/include -L ~/libjpeg/lib -ljpeg -lz
+ gcc -o png_display png_display.c -lz
+
+arm-linux-gcc main.c -o main -I . -I ~/libjpeg/include -L ~/libjpeg/lib -ljpeg -lz -lpng -lm
+
+arm-linux-gcc main.c -o main -I . -I ~/libjpeg/include -I ~/libpng/include -L ~/libjpeg/lib -L ~/libpng/lib -ljpeg -lz -lpng -lm
+
+arm-linux-gcc main.c -o main -pthread -I . \
+    -I ~/libjpeg/include -I ~/libpng/include -I ~/libgif/include \
+    -L ~/libjpeg/lib -L ~/libpng/lib -L ~/libgif/lib \
+    -ljpeg -lz -lpng -lm -lgif

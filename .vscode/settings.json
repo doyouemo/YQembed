@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "type_traits": "c",
+        "fcntl.h": "c",
+        "stdint.h": "c",
+        "config.h": "c",
+        "setjmp.h": "c",
+        "dirent.h": "c"
+    }
+}
