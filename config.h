@@ -115,6 +115,15 @@ extern volatile int gif_playing;
 extern pthread_t gif_thread;
 extern GifFileType *current_gif;
 
+// 定义触摸点结构体
+typedef struct
+{
+    int x;        // X坐标
+    int y;        // Y坐标
+    int pressure; // 触摸压力
+    bool valid;   // 有效标志位
+} TouchPoint;
+
 // 常量定义
 #define SCALE_MODE_BILINEAR 1
 

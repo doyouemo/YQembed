@@ -9,7 +9,7 @@ int current_image_index = 0;
 int screen_width = 800;
 char (*image_paths)[1024] = NULL;
 int image_paths_size = 0;
-
+extern int ts_fd;
 /**
  * 递归读取目录中特定类型的文件
  */
@@ -119,55 +119,7 @@ int main(void)
         image_paths = NULL;
         return -1;
     }
-
-    // 显示找到的图片
-    while (1)
-    {
-        if (current_image_index >= image_paths_size)
-        {
-            current_image_index = 0; // 循环显示
-        }
-
-        printf("Displaying: %s (index %d/%d)\n",
-               image_paths[current_image_index],
-               current_image_index,
-               image_paths_size - 1);
-
-        show_image(image_paths[current_image_index], 0, 0, 800, 480);
-
-        // 等待触摸事件切换图片
-        struct input_event ev;
-        int x = 0;
-        while (1)
-        {
-            if (read(ts_fd, &ev, sizeof(ev)) != sizeof(ev))
-            {
-                if (errno == EAGAIN)
-                    continue;
-                perror("Read error");
-                break;
-            }
-
-            switch (ev.type)
-            {
-            case EV_ABS:
-                handle_abs_event(&ev, &x);
-                break;
-            case EV_KEY:
-            {
-                handle_key_event(&ev, x);
-                goto image_changed;
-            }
-            case EV_SYN:
-                handle_sync_event();
-                break;
-            }
-        }
-
-    image_changed:
-        // 这里不需要额外操作，因为handle_key_event已经更新了current_image_index
-        printf("Image changed to index: %d\n", current_image_index);
-    }
+    handle_touch_events(ts_fd);
 
     // 清理资源
     dev_uninit();

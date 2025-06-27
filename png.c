@@ -152,17 +152,17 @@ int lcd_draw_scale_png(const char *pathname, int x, int y, int dst_w, int dst_h)
         offset_x = (dst_w - scaled_w) / 2;
     }
 
-    // 清空目标区域（黑色背景）
-    for (int j = 0; j < dst_h; j++)
-    {
-        for (int i = 0; i < dst_w; i++)
-        {
-            if (x + i < 800 && y + j < 480)
-            {
-                lcd_draw_point(x + i, y + j, 0x000000);
-            }
-        }
-    }
+    // // 清空目标区域（黑色背景）
+    // for (int j = 0; j < dst_h; j++)
+    // {
+    //     for (int i = 0; i < dst_w; i++)
+    //     {
+    //         if (x + i < 800 && y + j < 480)
+    //         {
+    //             lcd_draw_point(x + i, y + j, 0x000000);
+    //         }
+    //     }
+    // }
 
     // 双线性插值缩放
     for (int j = 0; j < scaled_h; j++)

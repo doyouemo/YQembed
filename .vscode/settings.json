@@ -5,6 +5,7 @@
         "stdint.h": "c",
         "config.h": "c",
         "setjmp.h": "c",
-        "dirent.h": "c"
+        "dirent.h": "c",
+        "stdio.h": "c"
     }
 }

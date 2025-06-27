@@ -227,6 +227,20 @@ int ShowGifAnimation(const char *path, int x, int y, int dst_w, int dst_h)
 {
     int error = 0;
 
+    // 检查文件是否存在
+    if (access(path, F_OK) == -1)
+    {
+        fprintf(stderr, "GIF Error: File '%s' does not exist\n", path);
+        return -1;
+    }
+
+    // 检查文件可读性
+    if (access(path, R_OK) == -1)
+    {
+        fprintf(stderr, "GIF Error: No permission to read file '%s'\n", path);
+        return -1;
+    }
+
     // 停止当前播放
     if (gif_playing)
     {

@@ -23,6 +23,9 @@
 int *lcd_ptr;
 int lcd_fd, ts_fd;
 
+extern char (*image_paths)[1024];
+extern int image_paths_size;
+
 int lcd_draw_point(int i, int j, int color)
 {
     if (i < 0 || i >= 800 || j < 0 || j >= 480)
