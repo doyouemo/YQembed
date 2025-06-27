@@ -30,10 +30,7 @@ extern char (*image_paths)[1024]; // 与 main.c 中的定义一致
 extern int image_paths_size;
 int image_count = sizeof(image_paths) / sizeof(image_paths[0]);
 
-int album(void);
-int music(const char *path);
-int video(const char *path);
-
+int av_fd; // 视频
 // 处理坐标事件
 void handle_abs_event(const struct input_event *ev, int *x)
 {
@@ -87,6 +84,9 @@ TouchPoint get_touch_data(int ts_fd)
     return point;
 }
 
+int album(void);
+int music(const char *path);
+int video(const char *path);
 // 停止GIF播放的辅助函数
 void stop_gif_playback(void)
 {
@@ -146,15 +146,17 @@ void handle_touch_events(int ts_fd)
                 // 当 music 函数返回后，重新显示主界面
                 show_main_interface();
             }
-            // else if ((point.x > 475 && point.x < 575) && (point.y > 190 && point.y < 290))
-            // {
-            //     // 实现 video 函数
-            //     video();
-            // }
+            else if ((point.x > 475 && point.x < 575) && (point.y > 190 && point.y < 290))
+            {
+                // 实现 video 函数
+                video("/music");
+                show_main_interface();
+            }
             // else if ((point.x > 625 && point.x < 725) && (point.y > 190 && point.y < 290))
             // {
             //     // 实现 device 函数
             //     device();
+            // show_main_interface();
             // }
         }
     }
@@ -451,76 +453,152 @@ int music(const char *dirname)
 }
 // 1
 // 2
-int video(const char *path)
+
+// 1. 播放器初始化（打开管道文件，用于调控播放过程当中所使用的动态参数）
+void mplayer_init()
+{
+    // 在临时目录创建管道文件
+    if (access("/tmp/fifo", F_OK))
+    {
+        mkfifo("/tmp/fifo", 0777);
+    }
+
+    // 打开管道文件
+    av_fd = open("/tmp/fifo", O_RDWR);
+}
+
+// 发送指令
+void send_cmd(char *cmd)
+{
+    write(av_fd, cmd, strlen(cmd));
+}
+
+// 2. 继续播放
+int res_play()
+{
+    system("killall -18  mplayer");
+}
+
+// 3. 暂停播放
+int pause_playback()
+{
+    system("killall -19  mplayer");
+    // send_cmd("pause\n");
+}
+
+// 4. 停止播放
+int stop_play()
+{
+    system("killall -9  mplayer");
+}
+
+// 音量控制函数
+void set_volume(int volume_level)
+{
+    char cmd[32];
+    snprintf(cmd, sizeof(cmd), "volume %d 1\n", volume_level);
+    send_cmd(cmd);
+
+    // 当音量为0时强制静音
+    if (volume_level == 0)
+    {
+        send_cmd("mute 1\n");
+    }
+    else
+    {
+        send_cmd("mute 0\n"); // 确保非0时取消静音
+    }
+}
+
+// 音量增加
+void vol_up(int *current_volume)
+{
+    if (*current_volume < 100)
+    {
+        *current_volume += 5;
+        if (*current_volume > 100)
+            *current_volume = 100;
+        set_volume(*current_volume);
+        printf("Volume increased to %d\n", *current_volume);
+    }
+}
+
+// 音量减少
+void vol_down(int *current_volume)
+{
+    if (*current_volume > 0)
+    {
+        *current_volume -= 5;
+        if (*current_volume < 0)
+            *current_volume = 0;
+        set_volume(*current_volume);
+        printf("Volume decreased to %d\n", *current_volume);
+    }
+}
+// 快进 5 秒
+int fast_forward()
+{
+    send_cmd("seek +5\n");
+}
+
+// 快退 10 秒
+int my_rewind()
+{
+    send_cmd("seek -10\n");
+}
+
+// 静音（开关）
+int mute()
+{
+    send_cmd("mute\n");
+}
+
+int video(const char *dirname)
 {
     // 显示初始界面 - 使用视频背景图
-    show_image("/picture/system/background_video.bmp", 0, 0, 800, 480);
-
-    // 显示控制按钮(位置与音乐播放器一致)
-    show_image("/picture/system/before.png", 200, 370, 80, 80); // 上一个
-    show_image("/picture/system/stop.png", 360, 370, 80, 80);   // 暂停(初始状态)
-    show_image("/picture/system/next.png", 540, 370, 80, 80);   // 下一个
-    show_image("/picture/system/back.png", 0, 0, 80, 80);       // 返回
-
-    // 音量控制按钮
-    show_image("/picture/system/jian.png", 20, 370, 80, 80); // 音量减
-    show_image("/picture/system/jia.png", 700, 370, 80, 80); // 音量加
+    show_image("/picture/system/background_video.jpg", 0, 0, 800, 480);
+    show_image("/picture/system/before.png", 200, 400, 80, 80);
+    show_image("/picture/system/stop.png", 360, 400, 80, 80); // 初始显示暂停按钮
+    show_image("/picture/system/next.png", 540, 400, 80, 80);
+    show_image("/picture/system/back.png", 0, 0, 80, 80);
+    // 显示音量控制按钮
+    show_image("/picture/system/jian.png", 20, 400, 80, 80);
+    show_image("/picture/system/jia.png", 700, 400, 80, 80);
 
     bool is_paused = false;
-    char (*videofiles)[1024] = calloc(512, 1024); // 存储视频文件路径
-    int videocount = 0;
+    char (*video_names)[1024] = calloc(512, 1024);
+    int video_count = 0;
 
-    // 递归搜索视频文件(支持多种格式)
-    dir_read_file_recursive(path, videofiles, &videocount, ".mp4");
-    dir_read_file_recursive(path, videofiles, &videocount, ".avi");
-    dir_read_file_recursive(path, videofiles, &videocount, ".mkv");
-    dir_read_file_recursive(path, videofiles, &videocount, ".mov");
+    // 递归读取视频文件(支持常见格式)
+    dir_read_file_recursive(dirname, video_names, &video_count, ".mp4");
+    dir_read_file_recursive(dirname, video_names, &video_count, ".avi");
+    dir_read_file_recursive(dirname, video_names, &video_count, ".mkv");
 
-    if (videocount == 0)
+    if (video_count == 0)
     {
-        printf("未找到视频文件: %s\n", path);
-        show_image("/picture/system/no_video.bmp", 200, 200, 400, 100); // 显示无视频提示
-        sleep(2);
-        free(videofiles);
+        printf("No video files found in %s\n", dirname);
+        free(video_names);
         return -1;
     }
 
     int current_index = 0;
-    pid_t playing_pid = -1;
-    int volume = 50; // 默认音量50%
+    int volume = 50; // 初始音量(0-100)
+    char cmd_buf[1024];
 
-    // 管道用于控制mplayer
-    int pipefd[2];
-    if (pipe(pipefd) == -1)
+    // 创建控制管道
+    mkfifo("/tmp/video_fifo", 0666);
+    mplayer_init();
+
+    // 初始播放第一个视频
+    if (video_count > 0)
     {
-        perror("创建管道失败");
-        free(videofiles);
-        return -1;
-    }
 
-    // 播放第一个视频
-    if (videocount > 0)
-    {
-        playing_pid = fork();
-        if (playing_pid == 0)
-        {
-            close(pipefd[0]); // 子进程关闭读端
-
-            // 重定向标准输入到管道写端
-            dup2(pipefd[1], STDIN_FILENO);
-            close(pipefd[1]);
-
-            // mplayer参数说明:
-            // -quiet: 减少输出
-            // -fs: 全屏模式
-            // -slave: 启用从模式(可通过管道控制)
-            // -volume: 初始音量
-            execlp("mplayer", "mplayer", "-quiet", "-fs", "-slave",
-                   "-volume", "50", videofiles[current_index], NULL);
-            perror("启动mplayer失败");
-            _exit(1);
-        }
-        close(pipefd[1]); // 父进程关闭写端
+        snprintf(cmd_buf, sizeof(cmd_buf),
+                 "mplayer %s -slave -quiet -input file=/tmp/video_fifo "
+                 "-zoom -x 800 -y 400 -geometry 0:0 -vo fbdev2 "
+                 "-volume %d -softvol -softvol-max 100 &",
+                 video_names[current_index], volume);
+        system(cmd_buf);
     }
 
     while (1)
@@ -529,82 +607,73 @@ int video(const char *path)
         if (!point.valid)
             continue;
 
-        // 只处理按下事件(避免重复触发)
+        // 处理按钮按下
         if (point.pressure == 1)
         {
-            // 上一个视频按钮
+            // 上一个视频按钮 (200,370)-(280,450)
             if (point.x >= 200 && point.x <= 280 && point.y >= 370 && point.y <= 450)
             {
-                printf("切换到上一个视频\n");
+                printf("Previous video button pressed\n");
+                system("killall -9 mplayer");
 
-                // 发送停止命令给mplayer
-                write(pipefd[0], "stop\n", 5);
-
-                // 更新索引
-                current_index = (current_index - 1 + videocount) % videocount;
-
-                // 加载新视频
-                char cmd[1024];
-                snprintf(cmd, sizeof(cmd), "loadfile \"%s\" 0\n", videofiles[current_index]);
-                write(pipefd[0], cmd, strlen(cmd));
-
-                // 更新UI状态
+                current_index = (current_index - 1 + video_count) % video_count;
+                // 切换视频后重置暂停状态和UI
                 is_paused = false;
-                show_image("/picture/system/stop.png", 360, 370, 80, 80);
-            }
+                show_image("/picture/system/stop.png", 360, 400, 80, 80);
 
-            // 播放/暂停按钮
+                snprintf(cmd_buf, sizeof(cmd_buf),
+                         "mplayer %s -slave -quiet -input file=/tmp/video_fifo "
+                         "-zoom -x 800 -y 400 -geometry 0:0 -vo fbdev2 "
+                         "-volume %d -softvol -softvol-max 100 &",
+                         video_names[current_index], volume);
+                system(cmd_buf);
+            }
+            // 播放/暂停按钮 (360,370)-(440,450)
             else if (point.x >= 360 && point.x <= 440 && point.y >= 370 && point.y <= 450)
             {
+                printf("Play/Pause button pressed\n");
                 if (is_paused)
                 {
-                    printf("恢复播放\n");
-                    write(pipefd[0], "pause\n", 6);
-                    show_image("/picture/system/stop.png", 360, 370, 80, 80);
+                    // 恢复播放
+                    show_image("/picture/system/stop.png", 360, 400, 80, 80);
+                    res_play();
+                    is_paused = false;
                 }
                 else
                 {
-                    printf("暂停播放\n");
-                    write(pipefd[0], "pause\n", 6);
-                    show_image("/picture/system/start.png", 360, 370, 80, 80);
+                    // 暂停播放
+                    show_image("/picture/system/start.png", 360, 400, 80, 80);
+                    pause_playback();
+                    is_paused = true;
                 }
-                is_paused = !is_paused;
             }
-
-            // 下一个视频按钮
+            // 下一个视频按钮 (540,370)-(620,450)
             else if (point.x >= 540 && point.x <= 620 && point.y >= 370 && point.y <= 450)
             {
-                printf("切换到下一个视频\n");
+                printf("Next video button pressed\n");
+                system("killall -9 mplayer");
 
-                write(pipefd[0], "stop\n", 5);
-
-                current_index = (current_index + 1) % videocount;
-
-                char cmd[1024];
-                snprintf(cmd, sizeof(cmd), "loadfile \"%s\" 0\n", videofiles[current_index]);
-                write(pipefd[0], cmd, strlen(cmd));
-
+                current_index = (current_index + 1) % video_count;
+                // 切换视频后重置暂停状态和UI
                 is_paused = false;
-                show_image("/picture/system/stop.png", 360, 370, 80, 80);
-            }
+                show_image("/picture/system/stop.png", 360, 400, 80, 80);
 
-            // 退出按钮
+                snprintf(cmd_buf, sizeof(cmd_buf),
+                         "mplayer %s -slave -quiet -input file=/tmp/video_fifo "
+                         "-zoom -x 800 -y 400 -geometry 0:0 -vo fbdev2 "
+                         "-volume %d -softvol -softvol-max 100 &",
+                         video_names[current_index], volume);
+                system(cmd_buf);
+            }
+            // 退出按钮 (0,0)-(80,80)
             else if (point.x >= 0 && point.x <= 80 && point.y >= 0 && point.y <= 80)
             {
-                printf("退出视频播放\n");
-
-                // 发送退出命令
-                write(pipefd[0], "quit\n", 5);
-
-                // 等待子进程结束
-                waitpid(playing_pid, NULL, 0);
-
-                close(pipefd[0]);
-                free(videofiles);
+                system("killall -9 mplayer");
+                unlink("/tmp/video_fifo");
+                free(video_names);
                 return 0;
             }
-
-            // 音量增加按钮
+            // 增加音量按钮 (700,370)-(780,450)
             else if (point.x >= 700 && point.x <= 780 && point.y >= 370 && point.y <= 450)
             {
                 if (volume < 100)
@@ -612,16 +681,20 @@ int video(const char *path)
                     volume += 5;
                     if (volume > 100)
                         volume = 100;
+                    printf("Volume increased to %d\n", volume);
 
-                    printf("音量增加到: %d\n", volume);
-
-                    char cmd[32];
-                    snprintf(cmd, sizeof(cmd), "volume %d 1\n", volume);
-                    write(pipefd[0], cmd, strlen(cmd));
+                    // 通过管道发送音量命令
+                    int fd = open("/tmp/video_fifo", O_WRONLY);
+                    if (fd > 0)
+                    {
+                        char cmd[32];
+                        snprintf(cmd, sizeof(cmd), "volume %d 1\n", volume);
+                        write(fd, cmd, strlen(cmd));
+                        close(fd);
+                    }
                 }
             }
-
-            // 音量减少按钮
+            // 减少音量按钮 (20,370)-(100,450)
             else if (point.x >= 20 && point.x <= 100 && point.y >= 370 && point.y <= 450)
             {
                 if (volume > 0)
@@ -629,19 +702,24 @@ int video(const char *path)
                     volume -= 5;
                     if (volume < 0)
                         volume = 0;
+                    printf("Volume decreased to %d\n", volume);
 
-                    printf("音量减少到: %d\n", volume);
-
-                    char cmd[32];
-                    snprintf(cmd, sizeof(cmd), "volume %d 1\n", volume);
-                    write(pipefd[0], cmd, strlen(cmd));
+                    // 通过管道发送音量命令
+                    int fd = open("/tmp/video_fifo", O_WRONLY);
+                    if (fd > 0)
+                    {
+                        char cmd[32];
+                        snprintf(cmd, sizeof(cmd), "volume %d 1\n", volume);
+                        write(fd, cmd, strlen(cmd));
+                        close(fd);
+                    }
                 }
             }
         }
     }
 }
-
-//  处理同步事件（表示一个事件序列结束）
+// 3
+//   处理同步事件（表示一个事件序列结束）
 void handle_sync_event(void)
 {
     // printf("---- End of Event ----\n");
