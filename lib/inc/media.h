@@ -6,6 +6,7 @@
 extern int av_fd;
 
 // 媒体控制函数
+void cleanup_music(void);
 void mplayer_init();
 void send_cmd(char *cmd);
 int res_play();
@@ -18,8 +19,6 @@ int fast_forward();
 int my_rewind();
 int mute();
 
-// 媒体播放函数
-int music(const char *path);
-int video(const char *path);
+
 
 #endif // MEDIA_H

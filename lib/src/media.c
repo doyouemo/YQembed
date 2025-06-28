@@ -4,6 +4,13 @@
 
 int av_fd = -1;
 
+// 添加清理函数
+void cleanup_music(void)
+{
+    system("killall -9 madplay");
+    return 0;
+}
+
 // 1. 播放器初始化（打开管道文件，用于调控播放过程当中所使用的动态参数）
 void mplayer_init()
 {
@@ -15,12 +22,14 @@ void mplayer_init()
 
     // 打开管道文件
     av_fd = open("/tmp/fifo", O_RDWR);
+    return 0;
 }
 
 // 发送指令
 void send_cmd(char *cmd)
 {
     write(av_fd, cmd, strlen(cmd));
+    return 0;
 }
 
 // 2. 继续播放

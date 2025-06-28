@@ -1,5 +1,6 @@
 #include "touch.h"
 #include "display.h"
+#include "media.h"
 #include <linux/input.h>
 
 /* 事件类型定义 */
@@ -23,10 +24,6 @@ extern int image_paths_size;
 int image_count = sizeof(image_paths) / sizeof(image_paths[0]);
 
 int av_fd; // 视频
-
-int album(void);
-int music(const char *path);
-int video(const char *path);
 
 // 处理坐标事件
 void handle_abs_event(const struct input_event *ev, int *x)
@@ -249,7 +246,6 @@ int album(void)
 // 在全局变量声明后添加函数声明
 extern int dir_read_file_recursive(const char *dirname, char (*filenames)[1024], int *count, const char *type);
 
-// 在music函数开头添加变量声明
 int music(const char *dirname)
 {
     // 显示初始界面
@@ -263,30 +259,34 @@ int music(const char *dirname)
     show_image("/picture/system/jia.png", 700, 370, 80, 80);
 
     bool is_paused = false;
-    char (*mp3names)[1024] = calloc(512, 1024);
-    int mp3count = 0;
+    char (*music_names)[1024] = calloc(512, 1024);
+    int music_count = 0;
     char cmd_buf[1024];
 
-    // 递归读取MP3文件
-    dir_read_file_recursive(dirname, mp3names, &mp3count, ".mp3");
+    // 递归读取音乐文件（支持MP3等格式）
+    dir_read_file_recursive(dirname, music_names, &music_count, ".mp3");
+    dir_read_file_recursive(dirname, music_names, &music_count, ".wav");
+    dir_read_file_recursive(dirname, music_names, &music_count, ".ogg");
 
-    if (mp3count == 0)
+    if (music_count == 0)
     {
-        printf("No MP3 files found in %s\n", dirname);
-        free(mp3names);
+        printf("No music files found in %s\n", dirname);
+        free(music_names);
         return -1;
     }
 
     int current_index = 0;
-    int volume = 0; // 初始音量(0-18, 0最大，18最小)
-    pid_t playing_pid = -1;
+    int volume = 50;                 // 初始音量(0-100)
+    mkfifo("/tmp/music_fifo", 0666); // 创建控制管道
+    mplayer_init();                  // 初始化mplayer控制
 
     // 初始播放第一首
-    if (mp3count > 0)
+    if (music_count > 0)
     {
         snprintf(cmd_buf, sizeof(cmd_buf),
-                 "madplay %s -Q --attenuate=%d &",
-                 mp3names[current_index], volume);
+                 "mplayer %s -slave -quiet -input file=/tmp/music_fifo "
+                 "-volume %d -softvol -softvol-max 100 &",
+                 music_names[current_index], volume);
         system(cmd_buf);
     }
 
@@ -299,100 +299,107 @@ int music(const char *dirname)
         // 处理按钮按下
         if (point.pressure == 1)
         {
-            // 上一首按钮
-            if (point.x >= 200 && point.x <= 280 && point.y >= 300 && point.y <= 400)
+            // 上一首按钮 (200,370)-(280,450)
+            if (point.x >= 200 && point.x <= 280 && point.y >= 370 && point.y <= 450)
             {
-                printf("Previous button pressed\n");
-                system("killall -9 madplay");
+                printf("Previous music button pressed\n");
+                system("killall -9 mplayer");
 
-                current_index = (current_index - 1 + mp3count) % mp3count;
+                current_index = (current_index - 1 + music_count) % music_count;
                 // 切换歌曲后重置暂停状态和UI
                 is_paused = false;
                 show_image("/picture/system/stop.png", 360, 370, 80, 80);
 
                 snprintf(cmd_buf, sizeof(cmd_buf),
-                         "madplay %s -Q --attenuate=%d &",
-                         mp3names[current_index], volume);
+                         "mplayer %s -slave -quiet -input file=/tmp/music_fifo "
+                         "-volume %d -softvol -softvol-max 100 &",
+                         music_names[current_index], volume);
                 system(cmd_buf);
             }
-            // 播放/暂停按钮
-            else if (point.x >= 360 && point.x <= 420 && point.y >= 300 && point.y <= 400)
+            // 播放/暂停按钮 (360,370)-(440,450)
+            else if (point.x >= 360 && point.x <= 440 && point.y >= 370 && point.y <= 450)
             {
                 printf("Play/Pause button pressed\n");
                 if (is_paused)
                 {
                     // 恢复播放
                     show_image("/picture/system/stop.png", 360, 370, 80, 80);
-                    system("killall -18 madplay");
+                    res_play();
                     is_paused = false;
                 }
                 else
                 {
                     // 暂停播放
                     show_image("/picture/system/start.png", 360, 370, 80, 80);
-                    system("killall -19 madplay");
+                    pause_playback();
                     is_paused = true;
                 }
             }
-            // 下一首按钮
-            else if (point.x >= 540 && point.x <= 620 && point.y >= 300 && point.y <= 400)
+            // 下一首按钮 (540,370)-(620,450)
+            else if (point.x >= 540 && point.x <= 620 && point.y >= 370 && point.y <= 450)
             {
-                printf("Next button pressed\n");
-                system("killall -9 madplay");
+                printf("Next music button pressed\n");
+                system("killall -9 mplayer");
 
-                current_index = (current_index + 1) % mp3count;
+                current_index = (current_index + 1) % music_count;
                 // 切换歌曲后重置暂停状态和UI
                 is_paused = false;
                 show_image("/picture/system/stop.png", 360, 370, 80, 80);
 
                 snprintf(cmd_buf, sizeof(cmd_buf),
-                         "madplay %s -Q --attenuate=%d &",
-                         mp3names[current_index], volume);
+                         "mplayer %s -slave -quiet -input file=/tmp/music_fifo "
+                         "-volume %d -softvol -softvol-max 100 &",
+                         music_names[current_index], volume);
                 system(cmd_buf);
             }
-            // 退出按钮
-            else if (point.x >= 0 && point.x <= 100 && point.y >= 0 && point.y <= 100)
+            // 退出按钮 (0,0)-(80,80)
+            else if (point.x >= 0 && point.x <= 80 && point.y >= 0 && point.y <= 80)
             {
-                system("killall -9 madplay");
-                free(mp3names);
+                system("killall -9 mplayer");
+                unlink("/tmp/music_fifo");
+                free(music_names);
                 return 0;
             }
-            // 增加音量按钮
-            else if (point.x >= 700 && point.x <= 780 && point.y >= 300 && point.y <= 400)
+            // 增加音量按钮 (700,370)-(780,450)
+            else if (point.x >= 700 && point.x <= 780 && point.y >= 370 && point.y <= 450)
             {
-                if (volume < 18)
-                {                // 音量范围-175~18，减少时检查上限
-                    volume += 5; // 注意：音量值越大表示音量越小
-                    if (volume > 18)
-                        volume = 18;
-
-                    printf("Volume decreased to %d\n", volume);
-
-                    // 重新启动madplay应用新音量
-                    system("killall -9 madplay");
-                    snprintf(cmd_buf, sizeof(cmd_buf),
-                             "madplay %s -Q --attenuate=%d &",
-                             mp3names[current_index], volume);
-                    system(cmd_buf);
-                }
-            }
-            // 减少音量按钮
-            else if (point.x >= 20 && point.x <= 100 && point.y >= 300 && point.y <= 400)
-            {
-                if (volume > -175)
-                {                // 音量范围-175~18，增加时检查下限
-                    volume -= 5; // 注意：音量值越小表示音量越大
-                    if (volume < -175)
-                        volume = -175;
-
+                if (volume < 100)
+                {
+                    volume += 5;
+                    if (volume > 100)
+                        volume = 100;
                     printf("Volume increased to %d\n", volume);
 
-                    // 重新启动madplay应用新音量
-                    system("killall -9 madplay");
-                    snprintf(cmd_buf, sizeof(cmd_buf),
-                             "madplay %s -Q --attenuate=%d &",
-                             mp3names[current_index], volume);
-                    system(cmd_buf);
+                    // 通过管道发送音量命令
+                    int fd = open("/tmp/music_fifo", O_WRONLY);
+                    if (fd > 0)
+                    {
+                        char cmd[32];
+                        snprintf(cmd, sizeof(cmd), "volume %d 1\n", volume);
+                        write(fd, cmd, strlen(cmd));
+                        close(fd);
+                    }
+                }
+            }
+            // 减少音量按钮 (20,370)-(100,450)
+            else if (point.x >= 20 && point.x <= 100 && point.y >= 370 && point.y <= 450)
+            {
+                if (volume > 0)
+                {
+                    volume -= 5;
+                    if (volume < 0)
+                        volume = 0;
+                    printf("Volume decreased to %d\n", volume);
+
+                    // 通过管道发送音量命令
+                    int fd = open("/tmp/music_fifo", O_WRONLY);
+                    if (fd > 0)
+                    {
+                        char cmd[32];
+                        snprintf(cmd, sizeof(cmd), "volume %d 1\n", volume);
+                        write(fd, cmd, strlen(cmd));
+                        close(fd);
+                    }
                 }
             }
         }
@@ -457,7 +464,7 @@ int video(const char *dirname)
         if (point.pressure == 1)
         {
             // 上一个视频按钮 (200,370)-(280,450)
-            if (point.x >= 200 && point.x <= 280 && point.y >= 370 && point.y <= 450)
+            if (point.x >= 200 && point.x <= 280 && point.y >= 400 && point.y <= 480)
             {
                 printf("Previous video button pressed\n");
                 system("killall -9 mplayer");
@@ -475,7 +482,7 @@ int video(const char *dirname)
                 system(cmd_buf);
             }
             // 播放/暂停按钮 (360,370)-(440,450)
-            else if (point.x >= 360 && point.x <= 440 && point.y >= 370 && point.y <= 450)
+            else if (point.x >= 360 && point.x <= 440 && point.y >= 400 && point.y <= 480)
             {
                 printf("Play/Pause button pressed\n");
                 if (is_paused)
@@ -494,7 +501,7 @@ int video(const char *dirname)
                 }
             }
             // 下一个视频按钮 (540,370)-(620,450)
-            else if (point.x >= 540 && point.x <= 620 && point.y >= 370 && point.y <= 450)
+            else if (point.x >= 540 && point.x <= 620 && point.y >= 400 && point.y <= 480)
             {
                 printf("Next video button pressed\n");
                 system("killall -9 mplayer");
@@ -520,7 +527,7 @@ int video(const char *dirname)
                 return 0;
             }
             // 增加音量按钮 (700,370)-(780,450)
-            else if (point.x >= 700 && point.x <= 780 && point.y >= 370 && point.y <= 450)
+            else if (point.x >= 700 && point.x <= 780 && point.y >= 400 && point.y <= 480)
             {
                 if (volume < 100)
                 {
@@ -541,7 +548,7 @@ int video(const char *dirname)
                 }
             }
             // 减少音量按钮 (20,370)-(100,450)
-            else if (point.x >= 20 && point.x <= 100 && point.y >= 370 && point.y <= 450)
+            else if (point.x >= 20 && point.x <= 100 && point.y >= 400 && point.y <= 480)
             {
                 if (volume > 0)
                 {

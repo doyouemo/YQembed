@@ -22,4 +22,9 @@ void stop_gif_playback(void);
 // 界面显示函数
 void show_main_interface();
 
+int album(void);
+// 媒体播放函数
+int music(const char *path);
+int video(const char *path);
+
 #endif // TOUCH_H
