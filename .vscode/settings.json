@@ -6,6 +6,12 @@
         "config.h": "c",
         "setjmp.h": "c",
         "dirent.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "signal.h": "c",
+        "display.h": "c",
+        "touch.h": "c",
+        "unistd.h": "c",
+        "media.h": "c",
+        "pthread.h": "c"
     }
 }

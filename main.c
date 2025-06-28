@@ -1,15 +1,16 @@
-#include <stdio.h>
-#include "touch.c"
-#include <sys/types.h>
-#include <dirent.h>
-#include <string.h>
+#include "config.h"
+#include "file_utils.h"
+#include "display.h"
+#include "touch.h"
 
 // 全局变量定义
 int current_image_index = 0;
-int screen_width = 800;
+int screen_width = SCREEN_WIDTH;
 char (*image_paths)[1024] = NULL;
 int image_paths_size = 0;
-extern int ts_fd;
+
+int ts_fd = -1;
+
 /**
  * 递归读取目录中特定类型的文件
  */
@@ -67,7 +68,13 @@ int dir_read_file_recursive(const char *dirname, char (*filenames)[1024], int *c
 
 int main(void)
 {
-    // 分配存储空间 - 使用全局变量
+    ts_fd = open("/dev/input/event0", O_RDONLY); // 或其他正确的触摸屏设备路径
+    if (ts_fd == -1)
+    {
+        perror("Failed to open touchscreen device");
+        return -1;
+    }
+    // 初始化路径存储
     image_paths = calloc(512, 1024);
     if (!image_paths)
     {
@@ -75,55 +82,30 @@ int main(void)
         return -1;
     }
 
-    int image_count = 0;
-
-    // 要搜索的目录列表
+    // 搜索图片文件
     const char *search_dirs[] = {"/picture/user"};
-    int dir_count = sizeof(search_dirs) / sizeof(search_dirs[0]);
+    const char *extensions[] = {".jpg", ".jpeg", ".png", ".bmp", ".gif"};
 
-    // 支持的图片格式
-    const char *image_types[] = {".jpg", ".jpeg", ".png", ".bmp", ".gif"};
-    int type_count = sizeof(image_types) / sizeof(image_types[0]);
-
-    // 检查目录是否存在
-    for (int i = 0; i < dir_count; i++)
+    for (int i = 0; i < sizeof(search_dirs) / sizeof(search_dirs[0]); i++)
     {
-        DIR *dir = opendir(search_dirs[i]);
-        if (!dir)
+        for (int j = 0; j < sizeof(extensions) / sizeof(extensions[0]); j++)
         {
-            printf("Warning: Directory not found: %s\n", search_dirs[i]);
-            continue;
-        }
-        closedir(dir);
-
-        for (int j = 0; j < type_count; j++)
-        {
-            dir_read_file_recursive(search_dirs[i], image_paths, &image_count, image_types[j]);
+            dir_read_file_recursive(search_dirs[i], image_paths, &image_paths_size, extensions[j]);
         }
     }
 
-    // 设置全局变量
-    image_paths_size = image_count;
-
-    // 调试输出找到的图片
-    printf("Found %d images:\n", image_paths_size);
-    for (int i = 0; i < image_paths_size; i++)
-    {
-        printf("  %d: %s\n", i, image_paths[i]);
-    }
-
-    // 初始化显示设备
+    // 初始化设备
     if (dev_init() != 0)
     {
         free(image_paths);
-        image_paths = NULL;
         return -1;
     }
+
+    // 进入主循环
     handle_touch_events(ts_fd);
 
-    // 清理资源
+    // 清理
     dev_uninit();
     free(image_paths);
-    image_paths = NULL;
     return 0;
 }
